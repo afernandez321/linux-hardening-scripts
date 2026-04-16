@@ -1,0 +1,170 @@
+#!/bin/bash
+#
+# Script Name: sudo_use_pty.sh
+# Author: Andres + ChatGPT
+# Date: 2026-04-16
+#
+# PURPOSE:
+# This script enforces the "Defaults use_pty" setting in sudo configuration.
+#
+# WHY THIS MATTERS:
+# - Ensures all sudo commands run inside a pseudo-terminal (PTY)
+# - Helps with logging, auditing, and security visibility
+# - Required by CIS Control 4.3.2 and commonly flagged by Qualys
+#
+# WHAT THIS SCRIPT DOES:
+# --check   → Verifies if "use_pty" is already configured
+# --apply   → Adds the setting safely using /etc/sudoers.d/
+# --backout → Restores previous state or removes the change
+#
+# SAFE TO RUN:
+# Yes — uses a dedicated file in /etc/sudoers.d/ (best practice)
+# Does NOT modify /etc/sudoers directly
+#
+# IMPORTANT:
+# Always validated with visudo to prevent breaking sudo access
+
+############################################
+# INPUT PARAMETER
+############################################
+
+MODE="$1"
+
+############################################
+# VARIABLES
+############################################
+
+# Directory where backups will be stored
+BACKUP_DIR="/var/tmp/sudo_use_pty_backup"
+
+# File we will manage (safe location, does not touch main sudoers file)
+TARGET_FILE="/etc/sudoers.d/99-andres-use-pty"
+
+############################################
+# FUNCTIONS
+############################################
+
+# Show correct usage if user runs script incorrectly
+usage() {
+  echo "Usage: $0 --check | --apply | --backout"
+}
+
+# Ensure script is run as root (required for sudo config changes)
+require_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR - This script must be run as root"
+    exit 1
+  fi
+}
+
+############################################
+# CHECK MODE
+############################################
+
+check_mode() {
+
+  echo "========================================="
+  echo "CHECK MODE: Verifying 'use_pty' setting"
+  echo "========================================="
+
+  # Search for "Defaults use_pty" in main sudoers and included directory
+  RESULT=$(grep -RHi '^[[:space:]]*Defaults[[:space:]]\+use_pty' /etc/sudoers /etc/sudoers.d 2>/dev/null)
+
+  if [ -n "$RESULT" ]; then
+    echo "OK - 'use_pty' is already configured"
+    echo ""
+    echo "Found in:"
+    echo "$RESULT"
+  else
+    echo "FAILED - 'use_pty' is NOT configured"
+  fi
+}
+
+############################################
+# APPLY MODE
+############################################
+
+apply_mode() {
+
+  echo "========================================="
+  echo "APPLY MODE: Enforcing 'use_pty'"
+  echo "========================================="
+
+  # Create backup directory if it doesn't exist
+  mkdir -p "$BACKUP_DIR"
+
+  # If file already exists, back it up before overwriting
+  if [ -f "$TARGET_FILE" ]; then
+    echo "Backing up existing file..."
+    cp -p "$TARGET_FILE" "$BACKUP_DIR/99-andres-use-pty.bak"
+  fi
+
+  # Write the required setting
+  echo "Defaults use_pty" > "$TARGET_FILE"
+
+  # Set correct permissions (required for sudoers files)
+  chmod 440 "$TARGET_FILE"
+
+  # Validate syntax using visudo (critical safety check)
+  if visudo -cf "$TARGET_FILE" >/dev/null 2>&1; then
+    echo "OK - visudo validation passed"
+  else
+    echo "FAILED - visudo validation failed"
+    echo "WARNING: Check file manually before proceeding"
+  fi
+}
+
+############################################
+# BACKOUT MODE
+############################################
+
+backout_mode() {
+
+  echo "========================================="
+  echo "BACKOUT MODE: Restoring previous state"
+  echo "========================================="
+
+  # If backup exists, restore it
+  if [ -f "$BACKUP_DIR/99-andres-use-pty.bak" ]; then
+    echo "Restoring from backup..."
+    cp -p "$BACKUP_DIR/99-andres-use-pty.bak" "$TARGET_FILE"
+  else
+    echo "No backup found. Removing configuration file..."
+    rm -f "$TARGET_FILE"
+  fi
+
+  # Validate entire sudo configuration after restore
+  if visudo -c >/dev/null 2>&1; then
+    echo "OK - sudo configuration is valid"
+  else
+    echo "WARNING - sudo configuration validation failed"
+  fi
+}
+
+############################################
+# MAIN LOGIC
+############################################
+
+case "$MODE" in
+  --check)
+    require_root
+    check_mode
+    ;;
+  --apply)
+    require_root
+    apply_mode
+    ;;
+  --backout)
+    require_root
+    backout_mode
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
+
+############################################
+# CLEAN EXIT (IMPORTANT FOR YOUR WRAPPER)
+############################################
+exit 0
