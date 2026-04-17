@@ -1,0 +1,47 @@
+#!/bin/bash
+# =========================================================
+# Author: Andres Fernandez
+# Script: andres_home_permsh
+# =========================================================
+
+# PURPOSE:
+# Ensure user home directories are NOT too open (>750)
+
+# SAFE:
+# ✔ Non-prod: YES
+# ✔ Prod: YES (low risk)
+
+MODE="$1"
+BACKUP="/tmp/home_perm_backup.txt"
+
+echo "==== HOME DIR PERMISSIONS ===="
+
+# CHECK
+awk -F: '$3 >= 1000 && $7 !~ /(nologin|false)/ {print $1 ":" $6}' /etc/passwd | while IFS=: read user home; do
+  [ -d "$home" ] || continue
+
+  perms=$(stat -c "%a" "$home")
+
+  if [ "$perms" -gt 750 ]; then
+    echo "FAILED | $user | $home | $perms"
+
+    if [ "$MODE" == "--apply" ]; then
+      echo "$home:$perms" >> $BACKUP
+      chmod 750 "$home"
+      echo "FIXED  | $home -> 750"
+    fi
+  else
+    echo "OK     | $user | $home"
+  fi
+done
+
+# BACKOUT
+if [ "$MODE" == "--backout" ]; then
+  [ -f "$BACKUP" ] || exit 0
+  while IFS=: read dir perm; do
+    chmod "$perm" "$dir"
+    echo "RESTORED | $dir -> $perm"
+  done < $BACKUP
+fi
+
+exit 0
