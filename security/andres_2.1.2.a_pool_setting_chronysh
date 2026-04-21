@@ -1,0 +1,22 @@
+#!/bin/bash
+# Author: Andres Fernandez
+# Date: 2026-04-02
+# Purpose: Ensure chrony pool is configured
+
+ACTION=$1
+BACKUP="/var/tmp/chrony.conf.bak"
+
+if [[ "$ACTION" == "--check" ]]; then
+    grep -i "^pool" /etc/chrony.conf
+fi
+
+if [[ "$ACTION" == "--apply" ]]; then
+    cp /etc/chrony.conf $BACKUP
+    grep -q "^pool" /etc/chrony.conf || echo "pool pool.ntp.org iburst" >> /etc/chrony.conf
+fi
+
+if [[ "$ACTION" == "--backout" ]]; then
+    cp $BACKUP /etc/chrony.conf
+fi
+
+exit 0

@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# Author: Andres Fernandez
+# Date: 2026-04-02
+#
+# Purpose:
+# This script checks, applies, and backs out the PASS_WARN_AGE setting
+# in /etc/login.defs to ensure users receive password expiration warnings.
+#
+# Control:
+# 4.5.1.3.b - Password expiration warning days
+#
+# Usage:
+# ./andres_myrosh2 server_list --script passwarnagesh --check
+# ./andres_myrosh2 server_list --script passwarnagesh --apply
+# ./andres_myrosh2 server_list --script passwarnagesh --backout
+
+ACTION=$1
+CONFIG_FILE="/etc/login.defs"
+BACKUP_FILE="/tmp/login.defs.passwarnage.bak"
+REQUIRED_VALUE=7
+
+########################################
+# FUNCTION: CHECK
+########################################
+check_setting() {
+    echo "Checking PASS_WARN_AGE setting..."
+
+    CURRENT_VALUE=$(grep -E "^PASS_WARN_AGE" $CONFIG_FILE | awk '{print $2}')
+
+    if [ -z "$CURRENT_VALUE" ]; then
+        echo "FAIL: PASS_WARN_AGE not set"
+    else
+        echo "Current PASS_WARN_AGE: $CURRENT_VALUE"
+
+        if [ "$CURRENT_VALUE" -ge "$REQUIRED_VALUE" ]; then
+            echo "PASS: Compliant"
+        else
+            echo "FAIL: Less than required ($REQUIRED_VALUE)"
+        fi
+    fi
+}
+
+########################################
+# FUNCTION: APPLY
+########################################
+apply_fix() {
+    echo "Applying PASS_WARN_AGE fix..."
+
+    # Backup
+    if [ ! -f "$BACKUP_FILE" ]; then
+        cp $CONFIG_FILE $BACKUP_FILE
+        echo "Backup created at $BACKUP_FILE"
+    else
+        echo "Backup already exists at $BACKUP_FILE"
+    fi
+
+    # Apply setting
+    if grep -q "^PASS_WARN_AGE" $CONFIG_FILE; then
+        sed -i "s/^PASS_WARN_AGE.*/PASS_WARN_AGE   $REQUIRED_VALUE/" $CONFIG_FILE
+    else
+        echo "PASS_WARN_AGE   $REQUIRED_VALUE" >> $CONFIG_FILE
+    fi
+
+    echo "PASS_WARN_AGE set to $REQUIRED_VALUE"
+}
+
+########################################
+# FUNCTION: BACKOUT
+########################################
+backout_fix() {
+    echo "Backing out PASS_WARN_AGE fix..."
+
+    if [ -f "$BACKUP_FILE" ]; then
+        cp $BACKUP_FILE $CONFIG_FILE
+        echo "Restored original file from backup"
+    else
+        echo "No backup file found. Cannot backout."
+    fi
+}
+
+########################################
+# MAIN
+########################################
+case "$ACTION" in
+    --check)
+        check_setting
+        ;;
+    --apply)
+        apply_fix
+        ;;
+    --backout)
+        backout_fix
+        ;;
+    *)
+        echo "Usage: $0 --check | --apply | --backout"
+        ;;
+esac
+
+exit 0
